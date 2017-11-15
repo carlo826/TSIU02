@@ -5,23 +5,20 @@
 ; Author : Carl & Frans
 ;
 
-	clr	r16
-	out	DDRA,r16
-	ldi r16, $8f	;
-	out DDRB, r16	;
+	clr	r16			; Rensa registeret r16
+	out	DDRA,r16	; Sätt alla DDRA bitar i port a till r16 = tomma
+	ldi r16, $8f	; Ladda de portar som behöver vara output i port b
+	out DDRB, r16	; Sätt r16 portar i DDRB
 
-	; sätt stacken!
-	ldi r16, low(RAMEND)
-	out SPL, r16
+	ldi r16, low(RAMEND) ; Sätt stackpekaren, RAMEND är 16 bit så vi måste splitta det
+	out spl, r16
 	ldi r16, high(RAMEND)
-	out SPH, r16
+	out spl, r16
 
 IDLE:
-	//sbi PORTA, 0	; Fake simulation
-
+	sbi PINA, 0		; Simulera aktiv signal från ir utsändare
 	sbic PINA, 0	; Skip readSignal 
-	jmp readSignal	; om A0 inte är satt
-
+	call readSignal	; om A0 är satt
 	jmp IDLE		; Loopa oändligt
 	 
 readSignal:
@@ -30,7 +27,7 @@ readSignal:
 
 	call HALFDELAY	; Vänta t/2 för nästa bit
 	sbis PINA, 0	; Kolla om startsignalen fortfarande finns
-	jmp IDLE		; Om startsignalen inte finns gå till IDLE
+	ret		; Om startsignalen inte finns avsulta subrutin
 
 	call DELAY		
 	sbic PINA, 0	; Kolla om A0 är satt
@@ -48,7 +45,7 @@ readSignal:
 	sbic PINA, 0	; Kolla om A0 är satt
 	sbi PORTB, 3	; Om A0 är satt sätt B3
 
-	jmp	IDLE
+	ret
 
 DELAY:
 	call HALFDELAY
@@ -57,16 +54,16 @@ DELAY:
 
 // DELAY T från uppgiftpapperet
 HALFDELAY:
-	sbi PORTB,7
-	ldi r16,5 ; Decimal bas
+	sbi PORTB,7 ; Sätter biten för oscilloskopet
+	ldi r17,5 ; Första värde som bestämmer antal loops
 
 delayYttreLoop:
-	ldi r17,$FF
+	ldi r18,255 ; Andra värde som bestämmer antal loops
 
 delayInreLoop:
-	dec r17
+	dec r18
 	brne delayInreLoop
-	dec r16
-	brne delayYttreLoop
-	cbi PORTB,7
+	dec r17
+	brne delayYttreLoop ; Delay är klar när den har gått r17 * r18 antal loopar
+	cbi PORTB,7 ; Tar bort biten för oscilloskopet
 	ret
