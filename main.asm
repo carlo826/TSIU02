@@ -22,6 +22,7 @@ out sph, r16;
 .def currbit = r19;
 .def temp = r20;
 .def antalsignaler = r21;
+.def morsecounter = r22;
 
 
 MESSAGE:
@@ -39,8 +40,9 @@ MORSE:
 	ldi char, 0;
 	call GET_CHAR;
 	cpi char, 0;			//Skip if char != 0
-	brlo MORSE;				
+	breq MORSE;				
 	call LOOKUP;			// Tills NUL
+	ldi morsecounter, 8;
 	call SEND;
 	//call NOBEEP(2N);
 	jmp MORSE;
@@ -61,17 +63,17 @@ LOOKUP:
 	
 SEND:
 	call GET_BIT;           // Hämta nasta bit
-	lpm temp, Z;
-	sbrs temp, 0;				// tills hela sänt
+	sbrs morsecounter, 0;	// tills hela sänt
 	ret;
-	sbis PORTA, 0;
 	ldi antalsignaler, 1;
+	sbic PORTA, 0;
 	call BEEP;			// 1N ljud, dit
 	ldi antalsignaler, 3;
-	sbic PORTA, 0				// tills hela sänt;
+	sbis PORTA, 0			// tills hela sänt;
 	call BEEP;				// 3N ljud
 	ldi antalsignaler, 1;
 	call NOBEEP;			// 1N tystnad
+	dec morsecounter
 	call GET_BIT;
 	ret;
 
