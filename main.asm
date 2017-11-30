@@ -8,111 +8,161 @@
 
 ; Replace with your application code
 
-ldi r16, 1;		//Ladda den port som ska vara output i port a
-out DDRA, r16	//Sätt den första  porten i port a till output
 
-ldi r16, low(RAMEND);
-out spl, r16;
-ldi r16, high(RAMEND);
-out sph, r16;
+.def Char = r16
+.def MorseChar = r17
+.def SignalCount = r18
+.def MorseCounter = r19
+.def Periods = r24
 
-.def char = r16;
-.def tablevalue = r17;
-.def morsechar = r18;
-.def currbit = r19;
-.def temp = r20;
-.def antalsignaler = r21;
-.def morsecounter = r22;
+.equ timeunit = 15
 
+ldi r16, 1				; Ladda den port som ska vara output i port a
+out DDRA, r16			; Sätt den första  porten i port a till output
+
+ldi r16, low(RAMEND)	; Initiera stack pekare
+out spl, r16
+ldi r16, high(RAMEND)
+out sph, r16
+
+ldi ZH, high(MESSAGE*2)
+ldi ZL, low(MESSAGE*2)
+
+MORSE:
+	call GET_CHAR
+	cpi Char, 0			; Skip if Char != 0
+	breq END
+	cpi Char, $20
+	breq SPACE
+	call LOOKUP			; Tills NUL
+	ldi MorseCounter, 8
+	call SEND
+	call LONGDELAY
+	ldi SignalCount, 2
+	call NOBEEP
+	jmp MORSE
+
+END:
+	jmp END
+
+GET_CHAR:
+	call GET_CHAR_INNER
+	ret
+GET_CHAR_INNER:
+	lpm Char, Z+
+	ret
+
+LOOKUP:
+	push ZH
+	push ZL
+	subi Char, $41
+	ldi ZH, high(BTAB*2)
+	ldi ZL, low(BTAB*2)
+	ldi	r20, 0
+	add ZL, Char
+	adc ZH, r20
+	lpm MorseChar, Z
+	pop ZL
+	pop ZH
+	ret
+
+SPACE:
+	ldi SignalCount, 7
+	call NOBEEP
+	call MORSE
+	ret
+	
+SEND:
+	call GET_BIT			; Hämta nasta bit
+	cpi MorseCounter, 0		; tills hela sänt
+	ldi Periods, timeunit 
+	brne SEND_INNER
+	ret
+
+SEND_INNER:
+	ldi SignalCount, 1
+	sbis PORTA, 0
+	call BEEP				; 1N ljud, dit
+
+	ldi SignalCount, 3
+	sbic PORTA, 0			; tills hela sänt;
+	call BEEP				; 3N ljud
+
+	ldi SignalCount, 1
+	call NOBEEP				; 1N tystnad
+
+	dec MorseCounter
+	call SEND
+	ret
+
+GET_BIT:
+	lsl MorseChar
+	brcs SET_BIT
+	ret
+
+SET_BIT:
+	sbi PORTA, 0
+	ret
+
+BEEP:
+	cpi SignalCount, 0
+	brne BEEP_INNER
+	ret
+BEEP_INNER:
+	cpi Periods, 0
+	brne BEEP_SEND
+	ret
+BEEP_SEND:
+	sbi PORTA, 0
+	call DELAY
+	cbi PORTA, 0
+	call DELAY
+	dec SignalCount
+	dec Periods
+	jmp BEEP
+
+
+NOBEEP:
+	cpi SignalCount, 0
+	brne NOBEEP_INNER
+	ret
+NOBEEP_INNER:
+	cpi Periods, 0
+	brne NOBEEP_SEND
+	ret
+NOBEEP_SEND:
+	cbi PORTA, 0
+	call DELAY
+	call DELAY
+	dec SignalCount
+	dec Periods
+	jmp NOBEEP
+
+DELAY:				; 20ms @ 4MHz
+	ldi     r21,5   ; Decimal bas
+delayYttreLoop:
+	ldi     r22,$FF
+delayInreLoop:
+	dec     r22
+	brne    delayInreLoop
+	dec     r21
+	brne    delayYttreLoop
+	ret
+
+LONGDELAY:
+	ldi r23, 20
+LONGDELAYCALL:
+	cpi r23, 0
+	brne INNERLONGDELAY
+	ret
+INNERLONGDELAY:
+	call DELAY
+	dec r23
+	jmp LONGDELAYCALL
+	
 
 MESSAGE:
 	.db "DATORTEKNIK", $00;
 
 BTAB:
-	.db "A", 0x60, "B", 0x88, "C", 0xA8//, "D", 0x90, "E", 0x40, "F", 0x28, "G", 0xD0, "H", 0x08, "I", 0x20, "J", 0x78, "K", 0xB0, "L", 0x48, "M", 0xE0, "N", 0xA0, "O", 0xF0, "P", 0x68, "Q", 0xD8, "R", 0x50, "S", 0x10, "T", 0xC0, "U", 0x30, "V", 0x18, "W", 0x70, "X", 0x98, "Y", 0xB8, "Z", 0xC8
-    //.db "A", $41, "B", $42, "C", $43, "D", $44, "E", $45, "F", $46, "G", $47, "H", $48, "I", $49, "J", $4A, "K", $4B, "L", $4C, "M", $4D, "N", $4E, "O", $4F, "P", $50, "Q", $51, "R", $52, "S", $53, "T", $54, "U", $55, "V", $56, "W", $57, "X", $58, "Y", $59, "Z", $5A
-
-ldi ZH, high(MESSAGE);
-ldi ZL, low(MESSAGE);
-
-
-MORSE:
-	ldi char, 0;
-	call GET_CHAR;
-	cpi char, 0;			//Skip if char != 0
-	breq MORSE;				
-	call LOOKUP;			// Tills NUL
-	ldi morsecounter, 8;
-	call SEND;
-	//call NOBEEP(2N);
-	jmp MORSE;
-
-
-GET_CHAR:
-	lpm char, Z+;
-	ret;
-
-LOOKUP:
-	ldi ZL, low(BTAB);
-	ldi ZH, high(BTAB);
-	lpm tablevalue, Z+;
-	cp char, tablevalue;
-	brne LOOKUP;
-	lpm morsechar, Z;
-	ret;
-	
-SEND:
-	call GET_BIT;           // Hämta nasta bit
-	sbrs morsecounter, 0;	// tills hela sänt
-	ret;
-	ldi antalsignaler, 1;
-	sbic PORTA, 0;
-	call BEEP;			// 1N ljud, dit
-	ldi antalsignaler, 3;
-	sbis PORTA, 0			// tills hela sänt;
-	call BEEP;				// 3N ljud
-	ldi antalsignaler, 1;
-	call NOBEEP;			// 1N tystnad
-	dec morsecounter
-	call GET_BIT;
-	ret;
-
-GET_BIT:
-	cbi PORTA, 0;
-	lsl morsechar;
-	brcs SET_BIT;
-	ret;
-
-SET_BIT:
-	sbi PORTA, 0;
-	ret
-
-BEEP:
-	ldi temp, 0
-	cp antalsignaler, temp;
-	breq BEEPRETURN;
-	call DELAY;
-	dec antalsignaler;
-	call BEEP;
-	ret;
-
-BEEPRETURN:
-	ret;
-
-NOBEEP:
-	cbi PORTA, 0;
-	call BEEP;
-	ret;
-
-DELAY:		//20ms @ 4MHz
-	ldi     r16,100   ; Decimal bas
-delayYttreLoop:
-	ldi     r17,$FF
-delayInreLoop:
-	dec     r17
-	brne    delayInreLoop
-	dec     r16
-	brne    delayYttreLoop
-	ret
-
-
+	.db $60, $88, $A8, $90, $40, $28, $D0, $08, $20, $78, $B0, $48, $E0, $A0, $F0, $68, $D8, $50, $10, $C0, $30, $18, $70, $98, $B8, $C8;
