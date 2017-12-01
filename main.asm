@@ -12,8 +12,8 @@
 .def Char = r16
 .def MorseChar = r17
 .def SignalCount = r18
-.def MorseCounter = r19
 .def Periods = r24
+.def CurrentBit = r25
 
 .equ timeunit = 15
 
@@ -30,15 +30,14 @@ ldi ZL, low(MESSAGE*2)
 
 MORSE:
 	call GET_CHAR
-	cpi Char, 0			; Skip if Char != 0
+	cpi Char, 0			; Skip if Char !=0 
 	breq END
 	cpi Char, $20
 	breq SPACE
 	call LOOKUP			; Tills NUL
-	ldi MorseCounter, 8
 	call SEND
-	call LONGDELAY
-	ldi SignalCount, 2
+	//call LONGDELAY
+	ldi SignalCount, 3
 	call NOBEEP
 	jmp MORSE
 
@@ -69,30 +68,28 @@ LOOKUP:
 SPACE:
 	ldi SignalCount, 7
 	call NOBEEP
-	call MORSE
-	ret
+	jmp MORSE
 	
 SEND:
 	call GET_BIT			; Hämta nasta bit
-	cpi MorseCounter, 0		; tills hela sänt
 	ldi Periods, timeunit 
+	cpi MorseChar, 0		; tills hela sänt
 	brne SEND_INNER
 	ret
 
 SEND_INNER:
 	ldi SignalCount, 1
-	sbis PORTA, 0
-	call BEEP				; 1N ljud, dit
+	cpi CurrentBit, 1
+	breq BEEP				; 1N ljud, dit
 
 	ldi SignalCount, 3
-	sbic PORTA, 0			; tills hela sänt;
-	call BEEP				; 3N ljud
+	cpi CurrentBit, 0		; tills hela sänt;
+	breq BEEP				; 3N ljud
 
 	ldi SignalCount, 1
 	call NOBEEP				; 1N tystnad
 
-	dec MorseCounter
-	call SEND
+	jmp SEND
 	ret
 
 GET_BIT:
@@ -101,7 +98,7 @@ GET_BIT:
 	ret
 
 SET_BIT:
-	sbi PORTA, 0
+	ldi CurrentBit, 1
 	ret
 
 BEEP:
@@ -123,6 +120,7 @@ BEEP_SEND:
 
 
 NOBEEP:
+	cbi PORTA, 0
 	cpi SignalCount, 0
 	brne NOBEEP_INNER
 	ret
@@ -131,35 +129,22 @@ NOBEEP_INNER:
 	brne NOBEEP_SEND
 	ret
 NOBEEP_SEND:
-	cbi PORTA, 0
 	call DELAY
 	call DELAY
 	dec SignalCount
 	dec Periods
 	jmp NOBEEP
 
-DELAY:				; 20ms @ 4MHz
+DELAY:				;
 	ldi     r21,5   ; Decimal bas
 delayYttreLoop:
-	ldi     r22,$FF
+	ldi     r22,250
 delayInreLoop:
 	dec     r22
 	brne    delayInreLoop
 	dec     r21
 	brne    delayYttreLoop
 	ret
-
-LONGDELAY:
-	ldi r23, 20
-LONGDELAYCALL:
-	cpi r23, 0
-	brne INNERLONGDELAY
-	ret
-INNERLONGDELAY:
-	call DELAY
-	dec r23
-	jmp LONGDELAYCALL
-	
 
 MESSAGE:
 	.db "DATORTEKNIK", $00;
