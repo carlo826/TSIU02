@@ -10,8 +10,6 @@
 
 .def Index = r18
 .def BCDTmp = r19
-.def BCDAddr = r20
-
 .def MUXIndex = r21
 .def MUXDigit = r22
 .def MUXAddr = r23
@@ -43,17 +41,33 @@ COLD:
 
 	sei						; Aktiverar global interrupt
 
-	ldi r16, $03				; Ladda de port som ska vara output i port a
+	ldi r16, $03			; Ladda de port som ska vara output i port a
 	out DDRA, r16			; Sätt den alla  portar i port a till output
 	ldi r16, $FF			; Ladda de port som ska vara output i port a
 	out DDRB, r16			; Sätt den alla  portar i port a till output
 
 	; --- Nollställer
+	clr Index
+	clr BCDTmp
 	clr Zero
+	clr MUXDigit
 	clr MUXIndex
+	clr MUXAddr
+
+	push YH
+	push YL
+	ldi YL, low(TIME)
+	ldi YH, high(TIME)
+	std Y+0, Zero
+	std Y+1, Zero
+	std Y+2, Zero
+	std Y+3, Zero
+	pop YL
+	pop YH
 
 WAIT:
 	jmp WAIT
+
 	; --- Interrupts
 INTERRUPT_0:
 	push r16
@@ -75,49 +89,52 @@ INTERRUPT_1:
 	pop r16
 	reti
 
-
 	; --- BCD
 BCD:
-	ldi YH, low(TIME)
-	ldi YL, high(TIME)
 	clr Index
 BCD_INNER:
+	push YH
+	push YL
+	ldi YL, low(TIME)
+	ldi YH, high(TIME)
 	add YL, Index
 	adc YH, Zero
-	sbrc Index, 0			; Skippa om index är jämnt
-	call BCD_ODD
-	sbrs Index, 0			; Skippa om index är udda
-	call BCD_EVEN
-	inc Index
-	cpi Index, 4
-	brne BCD_INNER
-	ret
 
-BCD_ODD:
+	; Increment TIME at Index
 	ld BCDTmp, Y
 	inc BCDTmp
+	st Y, BCDTmp
+	; ---
+
+	; Skippa om index är jämnt
+	sbrc Index, 0			
+	call BCD_ODD
+
+	; Skippa om index är udda
+	sbrs Index, 0			
+	call BCD_EVEN
+
+	pop YL
+	pop YH
+	
+	ret
+BCD_ODD:
 	cpi BCDTmp, 6
 	brsh OVERFLOW
 	ret
 BCD_EVEN:
-	ld BCDTmp, Y
-	inc BCDTmp
 	cpi BCDTmp, 10
 	brsh OVERFLOW
 	ret
 
 OVERFLOW:
-	st Y, Zero
+	st Y, Zero ; reset
 	cpi Index, 3
 	brne OVERFLOW_INNER
 	ret
 OVERFLOW_INNER:
-	add YL, Index
-	adc YH, Zero
-	ld BCDTmp, Y
-	inc BCDTmp
-	st Y, BCDTmp
-	subi YL, 1
+	inc Index
+	call BCD_INNER
 	ret
 
 	; --- MUX
@@ -126,20 +143,87 @@ MUX:
 	breq MUX_RESET
 	brne MUX_INNER
 MUX_INNER:
-	lds MUXAddr, TIME
-	add MUXAddr, MUXIndex
-	out PORTA, MUXIndex
-	ldi ZH, high(BIT_PATTERN*2)
+	push ZH
+	push ZL
+	push YH
+	push YL
+
 	ldi ZL, low(BIT_PATTERN*2)
-	add ZL, MUXIndex
+	ldi ZH, high(BIT_PATTERN*2)
+	ldi YL, low(TIME)
+	ldi YH, high(TIME)
+
+	add YL, MUXIndex
+	adc YH, Zero
+	ld MUXAddr, Y
+
+	add ZL, MUXAddr
 	adc ZH, Zero
 	lpm MUXDigit, Z
+
+	pop YL
+	pop YH
+	pop ZL
+	pop ZH
+
 	out PORTB, MUXDigit
+	out PORTA, MUXIndex
+
 	inc MUXIndex
 	ret
+
 MUX_RESET:
 	clr MUXIndex
 	ret
 
 BIT_PATTERN:
-	.db $3F, $6, $5B, $5E, $66, $6D, $7D, $27, $7F, $67
+	.db $3F, $6, $5B, $4F, $66, $6D, $7D, $27, $7F, $67
+
+
+/*  
+
+	MUX {
+		if (MUXIndex == 3) {
+			reset()
+		}
+		else {
+			inner()
+		}
+	}
+
+	inner(){
+		PORTA.set(MUXIndex)
+		digit = BIT_PATTERN[TIME[MUXIndex]]
+		PORTB.set(digit)
+		MUXIndex++
+	}
+
+	reset() {
+		MUXIndex = 0
+	}
+
+*/
+
+/*  
+	BCD {
+		INDEX = 0
+	}
+	BCD_INNER {
+		TIME[INDEX]++
+		when{
+			INDEX == EVEN {
+				if(TIME[INDEX] == 10)
+					overflow()
+			}
+			INDEX == ODD {
+				if(TIME[INDEX] == 6)
+					overflow()
+			}
+		}
+	}
+	overflow() {
+		TIME[INDEX] = 0;
+		INDEX++
+		BCD_INNER()
+	}
+*/
