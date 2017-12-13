@@ -147,7 +147,7 @@ JOY_DEC_POSY:
 	DECSRAM POSY
 	jmp JOY_LIM
 JOY_LIM :
-		call LIMITS ; don ’ t fall off world !
+		call LIMITS ; don  t fall off world !
 		ret
 		; ---------------------------------------
 		; --- LIMITS Limit POSX , POSY coordinates
@@ -227,10 +227,10 @@ HW_INIT :
 
 
 		ldi r16, $1F			; Ladda de port som ska vara output i port a
-		out DDRA, r16			; Sätt den alla portar i port a till output
+		out DDRA, r16			; Stt den alla portar i port a till output
 		
 		ldi r16, $7F			; Ladda de port som ska vara output i port b
-		out DDRB, r16			; Sätt den alla portar i port b till output
+		out DDRB, r16			; Stt den alla portar i port b till output
 
 		ret
 		; ---------------------------------------
