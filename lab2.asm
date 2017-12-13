@@ -44,7 +44,7 @@ MORSE:
 	cpi Char, 0			; Skip if Char !=0 
 	breq END
 	cpi Char, space
-	breq SPACE
+	breq DO_SPACE
 
 	call LOOKUP			; Tills NUL
 	call SEND
@@ -72,7 +72,7 @@ LOOKUP:
 	pop ZH
 	ret
 
-SPACE:
+DO_SPACE:
 	ldi SignalCount, 7
 	call NOBEEP
 	jmp MORSE
@@ -134,13 +134,13 @@ NOBEEP_END:
 	ret
 
 DELAY:				;
-	ldi     r21,2   ; Decimal bas
+	ldi     r23,2   ; Decimal bas
 delayYttreLoop:
-	ldi     r22,3
+	ldi     r24,3
 delayInreLoop:
-	dec     r22
+	dec     r24
 	brne    delayInreLoop
-	dec     r21
+	dec     r23
 	brne    delayYttreLoop
 	ret
 MESSAGE:
