@@ -6,37 +6,37 @@
 ;
 
 		; --- lab4_skal . asm
-		.equ VMEM_SZ = 5 ; # rows on display
-		.equ AD_CHAN_X = 0 ; ADC0 = PA0 , PORTA bit 0 X - led
-		.equ AD_CHAN_Y = 1 ; ADC1 = PA1 , PORTA bit 1 Y - led
-		.equ GAME_SPEED = 70 ; inter - run delay ( millisecs )
-		.equ PRESCALE = 7 ; AD - prescaler value
-		.equ BEEP_PITCH = 20 ; Victory beep pitch
-		.equ BEEP_LENGTH = 100 ; Victory beep length
+		.equ VMEM_SZ = 5        ; # rows on display
+		.equ AD_CHAN_X = 0      ; ADC0 = PA0 , PORTA bit 0 X - led
+		.equ AD_CHAN_Y = 1      ; ADC1 = PA1 , PORTA bit 1 Y - led
+		.equ GAME_SPEED = 70    ; inter - run delay ( millisecs )
+		.equ PRESCALE = 7       ; AD - prescaler value
+		.equ BEEP_PITCH = 20    ; Victory beep pitch
+		.equ BEEP_LENGTH = 100  ; Victory beep length
 
 		.def ZERO = r23
 		; ---------------------------------------
 		; --- Memory layout in SRAM
 		.dseg
 		.org SRAM_START
-POSX  :	.byte 1 ; Own position
+POSX  :	.byte 1         ; Own position
 POSY  :	.byte 1
-TPOSX : .byte 1 ; Target position
+TPOSX : .byte 1         ; Target position
 TPOSY : .byte 1
-LINE  : .byte 1 ; Current line
-VMEM  : .byte VMEM_SZ ; Video MEMory
-SEED  : .byte 1 ; Seed for Random
+LINE  : .byte 1         ; Current line
+VMEM  : .byte VMEM_SZ   ; Video MEMory
+SEED  : .byte 1         ; Seed for Random
 
 		; ---------------------------------------
 		; --- Macros for inc / dec - rementing
 		; --- a byte in SRAM
-		.macro INCSRAM ; inc byte in SRAM
+		.macro INCSRAM  ; inc byte in SRAM
 				lds r16 , @0
 				inc r16
 				sts @0 , r16
 		.endmacro
 
-		.macro DECSRAM ; dec byte in SRAM
+		.macro DECSRAM  ; dec byte in SRAM
 				lds r16 , @0
 				dec r16
 				sts @0 , r16
@@ -49,30 +49,35 @@ SEED  : .byte 1 ; Seed for Random
 		jmp START
 		.org INT0addr
 		jmp MUX
-START :
-		;*** Initiera stack pekare
-		ldi r16, low(RAMEND)	
+
+START:
+		ldi r16, low(RAMEND)	; stack pointer
 		out spl, r16
 		ldi r16, high(RAMEND)
 		out sph, r16
-		; //KLART
+
 		call HW_INIT
 		call WARM
-RUN :
+RUN:
 		call JOYSTICK
 		call ERASE
 		call UPDATE
 ;*** Vanta en stund sa inte spelet gar for fort ***
 ;*** Avgor om traff ***
 		call DELAY
+
+        ; X position
 		lds r16, POSX
 		lds r17, TPOSX
-		lds r18, POSY
-		lds r19, TPOSY
-		cpse r16, r17
-		cp r18, r19
-; //KLART
-		brne NO_HIT
+        cp r16, r17
+        brne NO_HIT 
+
+        ; Y position
+		lds r16, POSY
+		lds r17, TPOSY
+        cp r16, r17
+        brne NO_HIT 
+
 		ldi r16 , BEEP_LENGTH
 		call BEEP
 		call WARM
@@ -86,42 +91,40 @@ MUX :
 ;*** utskriften till diodmatrisen . Oka SEED . ***
 ; // KLART
 		push r16
-		in r16, SREG
-		push r16
 		push r17
-		call MUX_CORE
+
+		lds r17, LINE
+		cpi r17, VMEM_SZ ; is current line to draw at 5?
+		brne MUX_INNER   ; if not then continue MUX
+
 		pop r17
 		pop r16
-		out SREG, r16
-		pop r16
 		reti
-
-MUX_CORE:
-		lds r17, LINE
-		cpi r17, VMEM_SZ
-		brne MUX_INNER
 MUX_RESET:
-		sts LINE, ZERO
+		sts LINE, ZERO  ; reset mux counter to 0
 		lds r17, LINE
 MUX_INNER:
-		INCSRAM SEED
-		lsl r17
+		INCSRAM SEED    ; incr seed
+		lsl r17         ; double leftshift
 		lsl r17
 		out PORTA, r17
-		call DRAW_GAME
-		INCSRAM LINE
+		call DRAW_GAME  ; draw game
+		INCSRAM LINE    ; incr next line
 		ret
 DRAW_GAME:
 		push ZL
 		push ZH
-		lsr r17
-		lsr r17
+
+		lsr r17         ; double rightshift
+		lsr r17         ; reset byte from previous shifts
+
 		ldi ZL, low(VMEM)
 		ldi ZH, high(VMEM)
 		add ZL, r17
 		adc ZH, ZERO
 		ld r16, Z
 		out PORTB, r16
+
 		pop ZH
 		pop ZL
 		ret
@@ -133,60 +136,81 @@ JOYSTICK :
 ;*** skriv kod som okar eller minskar POSX beroende ***
 ;*** pa insignalen fran A/D - omvandlaren i X - led ... ***
 ;*** ... och samma for Y - led ***
-; // KLART
+        push r16
+        push r17
 
-		ldi r16, (1<<REFS1) | (1<<REFS0) ; 1100 0000
+        ; configure ADC on ADC00
+		ldi r16, (1<<REFS1) | (1<<REFS0)
 		out ADMUX, r16
+        ; enable adc with prescaling 0|1|1 (64)
 		ldi r16, (1<<ADEN) | (1<<ADSC) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
 		
-JOY_WAIT:
-		in r17, ADCSRA
-		andi r17, (1<<ADSC)
-		cp r17, ZERO
-		breq JOY_WAIT
-		
-JOY_LISTEN_X:
-		in r16, ADCL
-		in r17, ADCH
-		andi r16, $03 ; clear register "but" last bits
-		cpi r16, $03 ; if 0000 0011 (inc)
-		breq JOY_INC_POSX
-		cpi r16, $00  ; if 0000 0000 (decr)
-		breq JOY_DEC_POSX
-		jmp JOY_LISTEN_Y
+JOY_PARSE_X:
+;		in r17, ADCSRA      ; Other alternative than hardcoded check on bit 6
+;		andi r17, (1<<ADSC)
+;		cp r17, ZERO
+;		breq JOY_PARSE_X
+        sbic ADCSRA, 6      ; Listen on 6th bit (the ADSC "flag")
+        jmp JOY_PARSE_X
+        
+		in r16, ADCH        ; Get moste significant byte
+		andi r16, $03       ; Mask byte for most significant bits (0000 0011)
+
+		cpi r16, $03        ; if equals 0000 0011 
+		breq JOY_INC_POSX   ; then increase XPOS
+
+		cpi r16, $00        ; if equals 0000 0000
+		breq JOY_DEC_POSX   ; then decrease YPOS
+
+		jmp JOY_PARSE_Y
+
 JOY_INC_POSX:
 		INCSRAM POSX
-		jmp JOY_LISTEN_Y
+		jmp JOY_PARSE_Y
 JOY_DEC_POSX:
 		DECSRAM POSX
-		jmp JOY_LISTEN_Y
-JOY_LISTEN_Y:
-		ldi r16, (1<<REFS1) | (1<<REFS0) | (1<<MUX0) ; 1100 0001
-													 ; volt ADC1
+JOY_PARSE_Y:
+
+        ; configure ADC on ADC02
+		ldi r16, (1<<REFS1) | (1<<REFS0) | (1<<MUX0)
 		out ADMUX, r16
 		ldi r16, (1<<ADEN) | (1<<ADSC) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
+
+        ; Same procedure as with POSX
+
+;		in r17, ADCSRA
+;		andi r17, (1<<ADSC)
+;		cp r17, ZERO
+;		breq JOY_PARSE_X
+        sbic ADCSRA, 6
+        jmp JOY_PARSE_Y
+
 		in r16, ADCH
-		andi r16, $03 ; clear register "but" last bits
-		cpi r16, $03 ; if 0000 0011 (inc)
+		andi r16, $03     
+
+		cpi r16, $03       
 		breq JOY_INC_POSY
-		cpi r16, $00  ; if 0000 0000 (decr)
+
+		cpi r16, $00       
 		breq JOY_DEC_POSY
+
 		jmp JOY_LIM
 JOY_INC_POSY:
 		INCSRAM POSY
 		jmp JOY_LIM
 JOY_DEC_POSY:
 		DECSRAM POSY
-		jmp JOY_LIM
-JOY_LIM :
+JOY_LIM:
 		call LIMITS ; don ’ t fall off world !*/
+        pop r17
+        pop r16
 		ret
 		; ---------------------------------------
 		; --- LIMITS Limit POSX , POSY coordinates
 		; --- Uses : r16 , r17
-LIMITS :
+LIMITS:
 		lds r16 , POSX ; variable
 		ldi r17 ,7 ; upper limit +1
 		call POS_LIM ; actual work
@@ -196,21 +220,21 @@ LIMITS :
 		call POS_LIM ; actual work
 		sts POSY , r16
 		ret
-POS_LIM :
+POS_LIM:
 		ori r16 ,0 ; negative ?
 		brmi POS_LESS ; POSX neg = > add 1
 		cp r16 , r17 ; past edge
 		brne POS_OK
 		subi r16 ,2
-POS_LESS :
+POS_LESS:
 		inc r16
-POS_OK :
+POS_OK:
 		ret
 		; ---------------------------------------
 		; --- UPDATE VMEM
 		; --- with POSX /Y , TPOSX /Y
 		; --- Uses : r16 , r17 , Z
-UPDATE :
+UPDATE:
 		clr ZH
 		ldi ZL , LOW ( POSX )
 		call SETPOS
@@ -222,7 +246,7 @@ UPDATE :
 		; --- Uses : r16 , r17 , Z
 		; --- 1 st call Z points to POSX at entry and POSY at exit
 		; --- 2 nd call Z points to TPOSX at entry and TPOSY at exit
-SETPOS :
+SETPOS:
 		ld r17 , Z + ; r17 = POSX
 		call SETBIT ; r16 = bitpattern for VMEM + POSY
 		ld r17 , Z ; r17 = POSY Z to POSY
@@ -234,25 +258,26 @@ SETPOS :
 		ret
 		; --- SETBIT Set bit r17 on r16
 		; --- Uses : r16 , r17
-SETBIT :
+SETBIT:
 		ldi r16 , $01 ; bit to shift
-SETBIT_LOOP :
+SETBIT_LOOP:
 		dec r17
 		brmi SETBIT_END ; til done
 		lsl r16 ; shift
 		jmp SETBIT_LOOP
-SETBIT_END :
+SETBIT_END:
 		ret
 		; ---------------------------------------
 		; --- Hardware init
 		; --- Uses :
-HW_INIT :
+HW_INIT:
 ;*** Konfigurera hardvara och MUX - avbrott enligt ***
 ;*** ditt elektriska schema . Konfigurera ***
 ;*** flanktriggat avbrott pa INT0 ( PD2 ). ***
 ; // KLART
-		; MUX
-		ldi r16, (1 << ISC01) | (0 << ISC00)
+        
+        ; CONFIGURE MUX INT01 interruption
+		ldi r16, (1 << ISC01) | (0 << ISC00)   
 		out MCUCR, r16
 		ldi r16, (1 << INT0)
 		out GICR, r16
@@ -266,33 +291,35 @@ HW_INIT :
 		ldi r16, $FF			; Ladda de port som ska vara output i port b
 		out DDRB, r16			; Sätt den alla portar i port b till output
 
-		clr Zero
-		sts LINE, Zero
+		clr ZERO
+		sts LINE, ZERO          ; Nollställer LINE
 
 		ret
 		; ---------------------------------------
 		; --- WARM start . Set up a new game .
 		; --- Uses :
-WARM :
+WARM:
 ;*** Satt startposition ( POSX , POSY )=(0 ,2) ***
-		ldi r16, 0
-		sts POSX, r16
-		ldi r16, 2
-		sts POSY, r16
-; //KLAR 
+        push r16
+
+		ldi r16, $00    ; Set starting xposition to 0
+		sts POSX, r16   ; Write to SRAM posx
+		ldi r16, $02    ; Set starting uposition to 2
+		sts POSY, r16   ; Write to SRAM posy
+
 		push r0
 		push r0
-		call RANDOM ; RANDOM returns TPOSX , TPOSY on stack
+		call RANDOM 
+
+;*** RANDOM returns TPOSX, TPOSY on stack ***
 ;*** Satt startposition ( TPOSX , TPOSY ) ***
 		pop r16
-		ldi r16, 4
 		sts TPOSY, r16
 		pop r16
-		ldi r16, 0
 		sts TPOSX, r16
-; // KLART
 
 		call ERASE
+        pop r16
 		ret
 		; ---------------------------------------
 		; --- RANDOM generate TPOSX , TPOSY
@@ -304,51 +331,56 @@ WARM :
 		; --- pop TPOSX
 		; --- pop TPOSY
 		; --- Uses : r16
-RANDOM :
-		ret
-/*
-		in r16 , SPH
-		mov ZH , r16
-		in r16 , SPL
-		mov ZL , r16
-		lds r16 , SEED
+RANDOM:
+        push r16
+		in r16, SPH
+		mov ZH, r16
+		in r16, SPL
+		mov ZL, r16
+		lds r16, SEED
 
 ;*** Anvand SEED for att berakna TPOSX ***
 ;*** Anvand SEED for att berakna TPOSY ***
 ;		*** ; store TPOSX 2..6
 ;		*** ; store TPOSY 0..4
-		andi r16, $07
-		cpi  r16, $05
-		brsh LIMIT_Y_SEED
-		jmp RANDOM_X
-LIMIT_Y_SEED:
-		andi r16, $03
-		std Z+2, r16
+RANDOM_Y:
+		andi r16, $07       ; Mask byte with 0000 0111 (limit to 7)
+		cpi  r16, $05       ; Is random higher than 5?
+		brlo RND_TRIM_Y     ; Limit it
+        rjmp RND_Y_DONE
+RND_TRIM_Y:
+		andi r16, $03       ; Mask byte with 0000 0011 (its either 5, 6 or 7)          
+RND_Y_DONE:
+        std Z+2, r16        ; store POSY to stack
+
 RANDOM_X:
 		lds r16, SEED
-		andi r16, 28
-		lsl r16
-		lsl r16
-		cpi r16, 2
-		brlo LIMIT_LX_SEED
-		cpi r16, 7
-		brsh LIMIT_HX_SEED
-		jmp RANDOM_FINISH
-LIMIT_LX_SEED:
-		andi r16, $02
-		jmp RANDOM_FINISH
-LIMIT_HX_SEED:
-		andi r16, $03
-		jmp RANDOM_FINISH
-RANDOM_FINISH:
-		std Z+3, r16
+		andi r16, $1C       ; Mask byte with 0001 1100 (take other bits in seed)
+		lsl r16             ; adjust offset 
+		lsl r16             ; finished at 0000 0111
+
+		cpi r16, $02        ; Is X lower than 2?
+		brlo RND_TRIM_LX    ; Limit it
+
+		cpi r16, $07        ; Is X higher or same as 7?
+		brsh RND_TRIM_HX    ; Limit it
+		jmp RANDOM_X_DONE
+RND_TRIM_LX:
+		andi r16, $02       ; Mask byte with 0000 0010 (its either 0 or 1)
+		jmp RANDOM_X_DONE
+RND_TRIM_HX:
+		andi r16, $03       ; Mask byte with 0000 0011    
+RANDOM_X_DONE:
+		std Z+3, r16        ; store POSX to stack
+RANDOM_DONE:
+        pop r16             ; pop
 		ret
-	*/
+
 		; ---------------------------------------
 		; --- ERASE videomemory
 		; --- Clears VMEM .. VMEM +4
 		; --- Uses :
-ERASE :
+ERASE:
 ;*** Radera videominnet ***
 		push ZL
 		push ZH
@@ -367,15 +399,12 @@ ERASE_END:
 		pop ZH
 		pop ZL
 		ret
-// KLAR
 		; ---------------------------------------
 		; --- BEEP ( r16 ) r16 half cycles of BEEP - PITCH
 		; --- Uses :
-BEEP :
+BEEP:
 ;*** skriv kod for ett ljud som ska markera traff ***
-		push r16
 		push r17
-		ldi r16, BEEP_PITCH
 		ldi r17, BEEP_LENGTH
 BEEP_WAVE:
 		sbi PORTB, 7
@@ -387,10 +416,9 @@ BEEP_WAVE:
 		brne BEEP_WAVE
 BEEP_END:
 		pop r17
-		pop r16
 		ret
 DELAY:				
-	ldi     r21, 100   ; Decimal bas
+	ldi     r21, BEEP_PITCH   ; Decimal bas
 delayYttreLoop:
 	ldi     r22, 12
 delayInreLoop:
