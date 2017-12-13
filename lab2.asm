@@ -112,10 +112,11 @@ BEEP_SEND:
 	call DELAY
 	dec Periods
 	cpse Periods, Zero
+	jmp BEEP_SEND
 	dec SignalCount
 	cpse SignalCount, Zero
 	jmp BEEP_END
-	jmp BEEP
+	jmp BEEP_SEND
 BEEP_END:
 	ret
 
@@ -126,6 +127,7 @@ NOBEEP_SEND:
 	call DELAY
 	dec Periods
 	cpse Periods, Zero
+	jmp NOBEEP_SEND
 	dec SignalCount
 	cpse SignalCount, Zero
 	jmp NOBEEP_END
@@ -144,6 +146,6 @@ delayInreLoop:
 	brne    delayYttreLoop
 	ret
 MESSAGE:
-	.db "DATORTEKNIK", $00;
+	.db "C", $00;
 BTAB:
 	.db $60, $88, $A8, $90, $40, $28, $D0, $08, $20, $78, $B0, $48, $E0, $A0, $F0, $68, $D8, $50, $10, $C0, $30, $18, $70, $98, $B8, $C8;
