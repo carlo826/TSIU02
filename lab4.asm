@@ -14,7 +14,7 @@
 		.equ BEEP_PITCH = 20 ; Victory beep pitch
 		.equ BEEP_LENGTH = 100 ; Victory beep length
 
-		.def MUX_INDEX = r20
+		.def ZERO = r23
 		; ---------------------------------------
 		; --- Memory layout in SRAM
 		.dseg
@@ -41,6 +41,7 @@ SEED  : .byte 1 ; Seed for Random
 				dec r16
 				sts @0 , r16
 		.endmacro
+
 		; ---------------------------------------
 		; --- Code
 		.cseg
@@ -76,28 +77,54 @@ RUN :
 		call BEEP
 		call WARM
 NO_HIT :
-jmp RUN
+		jmp RUN
 		; ---------------------------------------
 		; --- Multiplex display
 		; --- Uses : r16
 MUX :
-
 ;*** skriv rutin som handhar multiplexningen och ***
 ;*** utskriften till diodmatrisen . Oka SEED . ***
 ; // KLART
-		cpi MUX_INDEX, VMEM_SZ
+		push r16
+		in r16, SREG
+		push r16
+		push r17
+		call MUX_CORE
+		pop r17
+		pop r16
+		out SREG, r16
+		pop r16
+		reti
+
+MUX_CORE:
+		lds r17, LINE
+		cpi r17, VMEM_SZ
 		brne MUX_INNER
 MUX_RESET:
-		clr MUX_INDEX
+		sts LINE, ZERO
+		lds r17, LINE
 MUX_INNER:
-		INCSRAM SEED ; 255 xd
-		lsl MUX_INDEX
-		lsl MUX_INDEX
-		lsl MUX_INDEX
-		andi MUX_INDEX, PORTA
-		out PORTA, MUX_INDEX
-		inc MUX_INDEX
-		reti
+		INCSRAM SEED
+		lsl r17
+		lsl r17
+		out PORTA, r17
+		call DRAW_GAME
+		INCSRAM LINE
+		ret
+DRAW_GAME:
+		push ZL
+		push ZH
+		lsr r17
+		lsr r17
+		ldi ZL, low(VMEM)
+		ldi ZH, high(VMEM)
+		add ZL, r17
+		adc ZH, ZERO
+		ld r16, Z
+		out PORTB, r16
+		pop ZH
+		pop ZL
+		ret
 		; ---------------------------------------
 		; --- JOYSTICK Sense stick and update POSX , POSY
 		; --- Uses :
@@ -109,12 +136,19 @@ JOYSTICK :
 ; // KLART
 
 		ldi r16, (1<<REFS1) | (1<<REFS0) ; 1100 0000
-										 ; volt ADC0
 		out ADMUX, r16
-		ldi r16, (1<<ADEN) | (1<<ADSC) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
+		ldi r16, (1<<ADEN) | (1<<ADSC) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
+		
+JOY_WAIT:
+		in r17, ADCSRA
+		andi r17, (1<<ADSC)
+		cp r17, ZERO
+		breq JOY_WAIT
+		
 JOY_LISTEN_X:
-		in r16, ADCH
+		in r16, ADCL
+		in r17, ADCH
 		andi r16, $03 ; clear register "but" last bits
 		cpi r16, $03 ; if 0000 0011 (inc)
 		breq JOY_INC_POSX
@@ -122,11 +156,11 @@ JOY_LISTEN_X:
 		breq JOY_DEC_POSX
 		jmp JOY_LISTEN_Y
 JOY_INC_POSX:
-	INCSRAM POSX
-	jmp JOY_LISTEN_Y
+		INCSRAM POSX
+		jmp JOY_LISTEN_Y
 JOY_DEC_POSX:
-	DECSRAM POSX
-	jmp JOY_LISTEN_Y
+		DECSRAM POSX
+		jmp JOY_LISTEN_Y
 JOY_LISTEN_Y:
 		ldi r16, (1<<REFS1) | (1<<REFS0) | (1<<MUX0) ; 1100 0001
 													 ; volt ADC1
@@ -141,13 +175,13 @@ JOY_LISTEN_Y:
 		breq JOY_DEC_POSY
 		jmp JOY_LIM
 JOY_INC_POSY:
-	INCSRAM POSY
-	jmp JOY_LIM
+		INCSRAM POSY
+		jmp JOY_LIM
 JOY_DEC_POSY:
-	DECSRAM POSY
-	jmp JOY_LIM
+		DECSRAM POSY
+		jmp JOY_LIM
 JOY_LIM :
-		call LIMITS ; don ’ t fall off world !
+		call LIMITS ; don ’ t fall off world !*/
 		ret
 		; ---------------------------------------
 		; --- LIMITS Limit POSX , POSY coordinates
@@ -229,8 +263,11 @@ HW_INIT :
 		ldi r16, $1F			; Ladda de port som ska vara output i port a
 		out DDRA, r16			; Sätt den alla portar i port a till output
 		
-		ldi r16, $7F			; Ladda de port som ska vara output i port b
+		ldi r16, $FF			; Ladda de port som ska vara output i port b
 		out DDRB, r16			; Sätt den alla portar i port b till output
+
+		clr Zero
+		sts LINE, Zero
 
 		ret
 		; ---------------------------------------
@@ -238,7 +275,7 @@ HW_INIT :
 		; --- Uses :
 WARM :
 ;*** Satt startposition ( POSX , POSY )=(0 ,2) ***
-		clr r16
+		ldi r16, 0
 		sts POSX, r16
 		ldi r16, 2
 		sts POSY, r16
@@ -248,8 +285,10 @@ WARM :
 		call RANDOM ; RANDOM returns TPOSX , TPOSY on stack
 ;*** Satt startposition ( TPOSX , TPOSY ) ***
 		pop r16
+		ldi r16, 4
 		sts TPOSY, r16
 		pop r16
+		ldi r16, 0
 		sts TPOSX, r16
 ; // KLART
 
@@ -266,6 +305,8 @@ WARM :
 		; --- pop TPOSY
 		; --- Uses : r16
 RANDOM :
+		ret
+/*
 		in r16 , SPH
 		mov ZH , r16
 		in r16 , SPL
@@ -302,6 +343,7 @@ LIMIT_HX_SEED:
 RANDOM_FINISH:
 		std Z+3, r16
 		ret
+	*/
 		; ---------------------------------------
 		; --- ERASE videomemory
 		; --- Clears VMEM .. VMEM +4
@@ -310,21 +352,18 @@ ERASE :
 ;*** Radera videominnet ***
 		push ZL
 		push ZH
-		push r16
 		push r17
-
-		clr r16
 		clr r17
 		ldi ZL, low(VMEM)
 		ldi ZH, high(VMEM)
 ERASE_LOOP:
-		st Z+, r16 
+		st Z+, ZERO 
 		inc r17
 		cpi r17, VMEM_SZ
-		brlo ERASE_LOOP
-
+		brsh ERASE_END
+		jmp ERASE_LOOP
+ERASE_END:
 		pop r17
-		pop r16
 		pop ZH
 		pop ZL
 		ret
@@ -336,7 +375,6 @@ BEEP :
 ;*** skriv kod for ett ljud som ska markera traff ***
 		push r16
 		push r17
-
 		ldi r16, BEEP_PITCH
 		ldi r17, BEEP_LENGTH
 BEEP_WAVE:
@@ -351,12 +389,13 @@ BEEP_END:
 		pop r17
 		pop r16
 		ret
-DELAY:				;
-	ldi     r21,3   ; Decimal bas
+DELAY:				
+	ldi     r21, 100   ; Decimal bas
 delayYttreLoop:
-	ldi     r22,2
+	ldi     r22, 12
 delayInreLoop:
 	dec     r22
+
 	brne    delayInreLoop
 	dec     r21
 	brne    delayYttreLoop
