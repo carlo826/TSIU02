@@ -11,9 +11,15 @@
 		.equ AD_CHAN_Y = 1      ; ADC1 = PA1 , PORTA bit 1 Y - led
 		.equ GAME_SPEED = 70    ; inter - run delay ( millisecs )
 		.equ PRESCALE = 7       ; AD - prescaler value
-		.equ BEEP_PITCH = 20    ; Victory beep pitch
-		.equ BEEP_LENGTH = 100  ; Victory beep length
+		.equ BEEP_LENGTH1 = 200  ; Victory beep length
+		.equ BEEP_LENGTH2 = 125  ; Victory beep length
+		.equ BEEP_LENGTH3 = 50  ; Victory beep lengt
+		.equ BEEP_PITCH1 = 120    ; Victory beep pitch
+		.equ BEEP_PITCH2 = 80   ; Victory beep pitch
+		.equ BEEP_PITCH3 = 40   ; Victory beep pitch
 
+		.def BPITCH = r24
+		.def BLENGTH = r25
 		.def ZERO = r23
 		; ---------------------------------------
 		; --- Memory layout in SRAM
@@ -64,6 +70,8 @@ RUN:
 		call UPDATE
 ;*** Vanta en stund sa inte spelet gar for fort ***
 ;*** Avgor om traff ***
+
+		call DELAY
 		call DELAY
 
         ; X position
@@ -77,7 +85,9 @@ RUN:
 		lds r17, TPOSY
         cp r16, r17
         brne NO_HIT 
-		call BEEP
+
+		call VICTORY_BEEP
+
 		call WARM
 NO_HIT :
 		jmp RUN
@@ -104,6 +114,7 @@ MUX_RESET:
 		sts LINE, ZERO  ; reset mux counter to 0
 		lds r17, LINE
 MUX_INNER:
+		out PORTB, ZERO	; clear portb for next
 		INCSRAM SEED    ; incr seed
 		lsl r17         ; double leftshift 
 		lsl r17			; to place in appropriate PORTA bits
@@ -140,21 +151,24 @@ JOYSTICK :
         push r16
         push r17
 
+JOY_READY_X:
         ; configure ADC on ADC00
-		ldi r16, (1<<REFS1) | (1<<REFS0)
+		ldi r16, (0<<REFS1) | (0<<REFS0)
 		out ADMUX, r16
         ; enable adc with prescaling 0|1|1
 		ldi r16, (1<<ADEN) | (1<<ADSC) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
 		
 JOY_PARSE_X:
-;		in r17, ADCSRA      ; Other alternative than hardcoded check on bit 6
-;		andi r17, (1<<ADSC)
-;		cp r17, ZERO
-;		breq JOY_PARSE_X
+		;in r17, ADCSRA      ; Other alternative than hardcoded check on bit 6
+		;andi r17, (1<<ADSC)
+		;cp r17, ZERO
+		;brne JOY_PARSE_X
+
+        in r17, ADCSRA
         sbic ADCSRA, 6      ; Listen on 6th bit (the ADSC "flag")
         jmp JOY_PARSE_X
-        
+
 		in r16, ADCH        ; Get moste significant byte
 		andi r16, $03       ; Mask byte for most significant bits (0000 0011)
 
@@ -164,27 +178,26 @@ JOY_PARSE_X:
 		cpi r16, $00        ; if equals 0000 0000
 		breq JOY_DEC_POSX   ; then decrease YPOS
 
-		jmp JOY_PARSE_Y
+		jmp JOY_READY_Y
 
 JOY_INC_POSX:
 		INCSRAM POSX
-		jmp JOY_PARSE_Y
+		jmp JOY_READY_Y
 JOY_DEC_POSX:
 		DECSRAM POSX
-JOY_PARSE_Y:
-
+JOY_READY_Y:
         ; configure ADC on ADC02
-		ldi r16, (1<<REFS1) | (1<<REFS0) | (1<<MUX0)
+		ldi r16, (0<<REFS1) | (0<<REFS0) | (1<<MUX0)
 		out ADMUX, r16
-		ldi r16, (1<<ADEN) | (1<<ADSC) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
+		ldi r16, (1<<ADEN) | (1<<ADSC) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
 
+JOY_PARSE_Y:
         ; Same procedure as with POSX
-
-;		in r17, ADCSRA
-;		andi r17, (1<<ADSC)
-;		cp r17, ZERO
-;		breq JOY_PARSE_X
+		;in r17, ADCSRA
+		;andi r17, (1<<ADSC)
+		;cp r17, ZERO
+		;brne JOY_PARSE_Y
         sbic ADCSRA, 6
         jmp JOY_PARSE_Y
 
@@ -285,13 +298,14 @@ HW_INIT:
 
 		sei ; display on
 
-
-		ldi r16, $1F			; Ladda de port som ska vara output i port a
+		ldi r16, $1C			; Ladda de port som ska vara output i port a
 		out DDRA, r16			; Sätt den alla portar i port a till output
 		
 		ldi r16, $FF			; Ladda de port som ska vara output i port b
 		out DDRB, r16			; Sätt den alla portar i port b till output
 
+		ldi BPITCH, BEEP_PITCH1
+		ldi BLENGTH, BEEP_LENGTH1
 		clr ZERO
 		sts LINE, ZERO          ; Nollställer LINE
 
@@ -405,29 +419,54 @@ ERASE_END:
 		; ---------------------------------------
 		; --- BEEP ( r16 ) r16 half cycles of BEEP - PITCH
 		; --- Uses :
+
+VICTORY_BEEP:
+		ldi BPITCH, BEEP_PITCH2
+		call BEEP
+		ldi BLENGTH, BEEP_PITCH3
+		call BEEP
+		ldi BLENGTH, BEEP_PITCH1
+		call BEEP
+		call BEEP
+		call BEEP
+		ret
 BEEP:
 ;*** skriv kod for ett ljud som ska markera traff ***
 		push r17
-		ldi r17, BEEP_LENGTH
+		push r22
+		push r21
+		mov r17, BLENGTH
 BEEP_WAVE:
 		sbi PORTB, 7
-		call DELAY
+		call BEEP_DELAY
 		cbi PORTB, 7
-		call DELAY
+		call BEEP_DELAY
 		dec r17
 		cpi r17, 0
 		brne BEEP_WAVE
 BEEP_END:
+		pop r21
+		pop r22
 		pop r17
 		ret
-DELAY:				
-	ldi     r21, BEEP_PITCH   ; Decimal bas
-delayYttreLoop:
-	ldi     r22, 12
-delayInreLoop:
-	dec     r22
+BEEP_DELAY:
+		mov r21, BPITCH
+BEEP_OUTER_LOOP:
+		ldi     r22, 12
+BEEP_INNER_LOOP:
+		dec     r22
+		brne    BEEP_INNER_LOOP
+		dec     r21
+		brne    BEEP_OUTER_LOOP
+		ret
 
-	brne    delayInreLoop
-	dec     r21
-	brne    delayYttreLoop
-	ret
+DELAY:				
+		ldi     r21, 255   ; Decimal bas
+delayYttreLoop:
+		ldi     r22, 255
+delayInreLoop:
+		dec     r22
+		brne    delayInreLoop
+		dec     r21
+		brne    delayYttreLoop
+		ret
