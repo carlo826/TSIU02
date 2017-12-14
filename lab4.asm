@@ -77,8 +77,6 @@ RUN:
 		lds r17, TPOSY
         cp r16, r17
         brne NO_HIT 
-
-		ldi r16 , BEEP_LENGTH
 		call BEEP
 		call WARM
 NO_HIT :
@@ -93,10 +91,12 @@ MUX :
 		push r16
 		push r17
 
+		ldi r16, VMEM_SZ
 		lds r17, LINE
-		cpi r17, VMEM_SZ ; is current line to draw at 5?
-		brne MUX_INNER   ; if not then continue MUX
-
+		cpse r17, r16   ; is current line to draw at 5?
+		jmp MUX_INNER   ; if not then continue MUX
+		jmp MUX_RESET
+MUX_END:
 		pop r17
 		pop r16
 		reti
@@ -105,12 +105,12 @@ MUX_RESET:
 		lds r17, LINE
 MUX_INNER:
 		INCSRAM SEED    ; incr seed
-		lsl r17         ; double leftshift
-		lsl r17
+		lsl r17         ; double leftshift 
+		lsl r17			; to place in appropriate PORTA bits
 		out PORTA, r17
 		call DRAW_GAME  ; draw game
 		INCSRAM LINE    ; incr next line
-		ret
+		jmp MUX_END
 DRAW_GAME:
 		push ZL
 		push ZH
@@ -122,6 +122,7 @@ DRAW_GAME:
 		ldi ZH, high(VMEM)
 		add ZL, r17
 		adc ZH, ZERO
+
 		ld r16, Z
 		out PORTB, r16
 
@@ -142,7 +143,7 @@ JOYSTICK :
         ; configure ADC on ADC00
 		ldi r16, (1<<REFS1) | (1<<REFS0)
 		out ADMUX, r16
-        ; enable adc with prescaling 0|1|1 (64)
+        ; enable adc with prescaling 0|1|1
 		ldi r16, (1<<ADEN) | (1<<ADSC) | (0<<ADPS2) | (1<<ADPS1) | (1<<ADPS0)
 		out ADCSRA, r16
 		
@@ -314,9 +315,9 @@ WARM:
 ;*** RANDOM returns TPOSX, TPOSY on stack ***
 ;*** Satt startposition ( TPOSX , TPOSY ) ***
 		pop r16
-		sts TPOSY, r16
+		sts TPOSY, r16	; Store y value from stack
 		pop r16
-		sts TPOSX, r16
+		sts TPOSX, r16  ; Store x value from stack
 
 		call ERASE
         pop r16
@@ -345,19 +346,19 @@ RANDOM:
 ;		*** ; store TPOSY 0..4
 RANDOM_Y:
 		andi r16, $07       ; Mask byte with 0000 0111 (limit to 7)
-		cpi  r16, $05       ; Is random higher than 5?
-		brlo RND_TRIM_Y     ; Limit it
-        rjmp RND_Y_DONE
+		cpi  r16, $05       ; Is random lower than 5?
+		brlo RND_Y_DONE     ; Limit it
 RND_TRIM_Y:
-		andi r16, $03       ; Mask byte with 0000 0011 (its either 5, 6 or 7)          
+		andi r16, $03       ; Mask byte with 0000 0011 (its either 5, 6 or 7)
+							; After mask it is 3 or 2         
 RND_Y_DONE:
-        std Z+2, r16        ; store POSY to stack
+        std Z+4, r16        ; store POSY to stack
 
 RANDOM_X:
 		lds r16, SEED
 		andi r16, $1C       ; Mask byte with 0001 1100 (take other bits in seed)
-		lsl r16             ; adjust offset 
-		lsl r16             ; finished at 0000 0111
+		lsr r16             ; adjust offset 
+		lsr r16             ; finished at 0000 0111
 
 		cpi r16, $02        ; Is X lower than 2?
 		brlo RND_TRIM_LX    ; Limit it
@@ -366,12 +367,14 @@ RANDOM_X:
 		brsh RND_TRIM_HX    ; Limit it
 		jmp RANDOM_X_DONE
 RND_TRIM_LX:
-		andi r16, $02       ; Mask byte with 0000 0010 (its either 0 or 1)
+		ori r16, $02       ; Mask byte with 0000 0010 (its either 0 or 1)
+						   ; After mask value is 2 or 3
 		jmp RANDOM_X_DONE
 RND_TRIM_HX:
-		andi r16, $03       ; Mask byte with 0000 0011    
+		andi r16, $03       ; Mask byte with 0000 0011
+							; After mask value is 3 or 2
 RANDOM_X_DONE:
-		std Z+3, r16        ; store POSX to stack
+		std Z+5, r16        ; store POSX to stack
 RANDOM_DONE:
         pop r16             ; pop
 		ret
